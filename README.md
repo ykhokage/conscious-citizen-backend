@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Conscious Citizen — Backend (Node.js + Express + PostgreSQL + Prisma)
 
 Этот backend соответствует фронтенду из архива:
@@ -73,3 +74,6 @@ CORS настраивается через переменную FRONTEND_ORIGIN.
 - POST /api/incidents/:id/send-email
 - GET /api/admin/incidents
 - GET /api/admin/stats
+=======
+# conscious-citizen-backend
+>>>>>>> d9ef9c5fe35707c27200907e3debe857bc6643a6
