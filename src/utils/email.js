@@ -15,19 +15,11 @@ function buildTransportOptions() {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-
-    // ✅ важно для Windows/IPv6-историй: принудительно IPv4
     family: 4,
-
-    // ✅ таймауты (по умолчанию иногда слишком "мягкие" / непонятные)
-    connectionTimeout: 25000,
-    greetingTimeout: 25000,
-    socketTimeout: 25000,
-
-    // ✅ TLS настройки: для mail.ru обычно ок, но можно оставить мягче
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
     tls: {
-      // если начнутся проблемы с сертификатами — можно временно true,
-      // но лучше держать false. Оставляю false.
       rejectUnauthorized: false,
       servername: host,
     },
@@ -48,26 +40,26 @@ export function canSendEmail() {
   );
 }
 
-async function sendWithRetry(sendFn, retries = 2) {
+async function sendWithRetry(sendFn, retries = 1) {
   let lastErr = null;
-  for (let i = 0; i < retries; i++) {
+
+  for (let i = 0; i <= retries; i++) {
     try {
       const tr = getTransporter();
-      // ✅ проверка канала (иногда сразу показывает причину)
-      await tr.verify();
       return await sendFn(tr);
     } catch (e) {
       lastErr = e;
-      // небольшая пауза перед повтором
-      await new Promise((r) => setTimeout(r, 800));
-      // сбрасываем transporter на всякий случай
       transporter = null;
+
+      if (i < retries) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
     }
   }
+
   throw lastErr;
 }
 
-// ✅ Обычная отправка письма (OTP)
 export async function sendMail({ to, subject, text }) {
   if (!canSendEmail()) throw new Error("SMTP not configured");
 
@@ -78,11 +70,11 @@ export async function sendMail({ to, subject, text }) {
       subject,
       text,
     });
+
     return { ok: true, messageId: info.messageId };
   });
 }
 
-// ✅ Отправка с PDF вложением
 export async function sendMailWithAttachment({
   to,
   subject,
@@ -106,6 +98,7 @@ export async function sendMailWithAttachment({
         },
       ],
     });
+
     return { ok: true, messageId: info.messageId };
   });
 }
