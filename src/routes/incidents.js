@@ -8,7 +8,7 @@ import { prisma } from "../db/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
 import { parse, incidentCreateSchema } from "../utils/validators.js";
 import { buildIncidentPdf, pdfToBuffer } from "../utils/pdf.js";
-import { canSendEmail, sendMailWithAttachment } from "../utils/email.js";
+import { canSendEmail, sendMail } from "../utils/email.js";
 import { uploadFileToStorage, deleteFileFromStorage } from "../utils/storage.js";
 
 const router = Router();
@@ -968,7 +968,7 @@ router.post("/:id/send-email", requireAuth, async (req, res, next) => {
         ok: true,
         queued: false,
         sent: false,
-        message: "SMTP не настроен, отправка отключена (MVP).",
+        message: "Email не настроен, отправка отключена.",
       });
     }
 
@@ -980,7 +980,7 @@ router.post("/:id/send-email", requireAuth, async (req, res, next) => {
 
     const pdfBuffer = await pdfToBuffer(doc);
 
-    await sendMailWithAttachment({
+    await sendMail({
       to: ownerUser.email,
       subject: `Обращение №${id} (${incident.title})`,
       text:
@@ -988,8 +988,12 @@ router.post("/:id/send-email", requireAuth, async (req, res, next) => {
         `Во вложении сформированное обращение №${id} ` +
         `из системы «Сознательный гражданин».\n\n` +
         `Дата: ${new Date().toLocaleString("ru-RU")}`,
-      filename: `incident_${id}.pdf`,
-      content: pdfBuffer,
+      attachments: [
+        {
+          filename: `incident_${id}.pdf`,
+          content: pdfBuffer,
+        },
+      ],
     });
 
     await prisma.notification.create({

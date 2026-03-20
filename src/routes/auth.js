@@ -20,24 +20,29 @@ import {
 const router = Router();
 
 function signToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  });
+  return jwt.sign(
+    { sub: user.id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+  );
 }
 
-function sendEmailInBackground({ to, subject, text, tag }) {
+function sendEmailInBackground({ to, subject, text, html, tag }) {
   if (!canSendEmail()) {
-    console.warn(`[${tag}] SMTP not configured, email skipped for ${to}`);
+    console.warn(`[${tag}] Email service not configured, email skipped for ${to}`);
     return;
   }
 
   queueMicrotask(() => {
-    sendMail({ to, subject, text })
+    sendMail({ to, subject, text, html })
       .then(() => {
         console.log(`[${tag}] email sent to ${to}`);
       })
       .catch((err) => {
-        console.error(`[${tag}] email send failed for ${to}:`, err?.message || err);
+        console.error(
+          `[${tag}] email send failed for ${to}:`,
+          err?.message || err
+        );
       });
   });
 }
@@ -48,7 +53,6 @@ function sendEmailInBackground({ to, subject, text, tag }) {
 router.post("/register", async (req, res, next) => {
   try {
     const data = parse(registerSchema, req.body);
-
     const normalizedEmail = data.email.toLowerCase();
 
     const exists = await prisma.user.findFirst({
@@ -64,15 +68,19 @@ router.post("/register", async (req, res, next) => {
       });
     }
 
-    const hashed = await bcrypt.hash(data.password, 10);
+    const hashedPassword = await bcrypt.hash(data.password, 10);
 
     const user = await prisma.user.create({
       data: {
         login: data.login,
         email: normalizedEmail,
-        password: hashed,
+        password: hashedPassword,
         emailVerified: false,
-        profile: { create: { city: "Самара" } },
+        profile: {
+          create: {
+            city: "Самара",
+          },
+        },
       },
       select: {
         id: true,
@@ -103,7 +111,7 @@ router.post("/register", async (req, res, next) => {
 
     const token = signToken(user);
 
-    res.status(201).json({
+    return res.status(201).json({
       user,
       token,
       emailSent: canSendEmail(),
@@ -123,9 +131,11 @@ router.post("/login", async (req, res, next) => {
   try {
     const data = parse(loginSchema, req.body);
 
+    const loginOrEmail = data.login.toLowerCase();
+
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ login: data.login }, { email: data.login.toLowerCase() }],
+        OR: [{ login: data.login }, { email: loginOrEmail }],
       },
     });
 
@@ -133,8 +143,9 @@ router.post("/login", async (req, res, next) => {
       return res.status(401).json({ message: "Неверный логин или пароль" });
     }
 
-    const ok = await bcrypt.compare(data.password, user.password);
-    if (!ok) {
+    const isPasswordValid = await bcrypt.compare(data.password, user.password);
+
+    if (!isPasswordValid) {
       return res.status(401).json({ message: "Неверный логин или пароль" });
     }
 
@@ -146,7 +157,7 @@ router.post("/login", async (req, res, next) => {
 
     const token = signToken(user);
 
-    res.json({
+    return res.json({
       token,
       user: {
         id: user.id,
@@ -202,7 +213,7 @@ router.post("/verify-email", async (req, res, next) => {
       return res.status(400).json({ message: "Неверный код" });
     }
 
-    const updated = await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
         emailVerified: true,
@@ -218,10 +229,10 @@ router.post("/verify-email", async (req, res, next) => {
       },
     });
 
-    res.json({
+    return res.json({
       ok: true,
       verified: true,
-      user: updated,
+      user: updatedUser,
       message: "Email подтверждён. Теперь можно войти.",
     });
   } catch (e) {
@@ -237,7 +248,9 @@ router.post("/resend-code", async (req, res, next) => {
     const data = parse(resetPasswordSchema, req.body);
     const email = data.email.toLowerCase();
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
 
     if (!user) {
       return res.status(404).json({ message: "Пользователь не найден" });
@@ -263,7 +276,7 @@ router.post("/resend-code", async (req, res, next) => {
     });
 
     sendEmailInBackground({
-      to: email,
+      to: user.email,
       subject: "Новый код подтверждения",
       text: buildVerifyEmailText(code),
       tag: "resend-code",
@@ -289,7 +302,9 @@ router.post("/reset-password", async (req, res, next) => {
     const data = parse(resetPasswordSchema, req.body);
     const email = data.email.toLowerCase();
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
 
     if (!user) {
       return res.json({
@@ -337,7 +352,9 @@ router.post("/reset-password/confirm", async (req, res, next) => {
     const email = data.email.toLowerCase();
     const { code, newPassword } = data;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
 
     if (!user) {
       return res.status(400).json({ message: "Неверный код или email" });
@@ -359,18 +376,18 @@ router.post("/reset-password/confirm", async (req, res, next) => {
       return res.status(400).json({ message: "Неверный код" });
     }
 
-    const hashed = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        password: hashed,
+        password: hashedPassword,
         resetCodeHash: null,
         resetCodeExp: null,
       },
     });
 
-    res.json({
+    return res.json({
       ok: true,
       message: "Пароль изменён. Теперь можно войти.",
     });

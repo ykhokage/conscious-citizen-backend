@@ -1,104 +1,30 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-let transporter = null;
-
-function buildTransportOptions() {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 465);
-  const secure = String(process.env.SMTP_SECURE || "true") === "true";
-
-  return {
-    host,
-    port,
-    secure,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    family: 4,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-    tls: {
-      rejectUnauthorized: false,
-      servername: host,
-    },
-  };
-}
-
-function getTransporter() {
-  if (transporter) return transporter;
-  transporter = nodemailer.createTransport(buildTransportOptions());
-  return transporter;
-}
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
 
 export function canSendEmail() {
-  return Boolean(
-    process.env.SMTP_HOST &&
-      process.env.SMTP_USER &&
-      process.env.SMTP_PASS
-  );
+  return Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM);
 }
 
-async function sendWithRetry(sendFn, retries = 1) {
-  let lastErr = null;
-
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const tr = getTransporter();
-      return await sendFn(tr);
-    } catch (e) {
-      lastErr = e;
-      transporter = null;
-
-      if (i < retries) {
-        await new Promise((r) => setTimeout(r, 500));
-      }
-    }
+export async function sendMail({ to, subject, text, html, attachments }) {
+  if (!canSendEmail() || !resend) {
+    throw new Error("Email service is not configured");
   }
 
-  throw lastErr;
-}
-
-export async function sendMail({ to, subject, text }) {
-  if (!canSendEmail()) throw new Error("SMTP not configured");
-
-  return sendWithRetry(async (tr) => {
-    const info = await tr.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to,
-      subject,
-      text,
-    });
-
-    return { ok: true, messageId: info.messageId };
+  const { data, error } = await resend.emails.send({
+    from: process.env.MAIL_FROM,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    text,
+    html,
+    attachments,
   });
-}
 
-export async function sendMailWithAttachment({
-  to,
-  subject,
-  text,
-  filename,
-  content,
-}) {
-  if (!canSendEmail()) throw new Error("SMTP not configured");
+  if (error) {
+    throw new Error(error.message || "Failed to send email");
+  }
 
-  return sendWithRetry(async (tr) => {
-    const info = await tr.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to,
-      subject,
-      text,
-      attachments: [
-        {
-          filename: filename || "incident.pdf",
-          content,
-          contentType: "application/pdf",
-        },
-      ],
-    });
-
-    return { ok: true, messageId: info.messageId };
-  });
+  return data;
 }
