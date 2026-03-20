@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    container_name: conscious_db
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: conscious
+    ports:
+      - "5432:5432"
+    volumes:
+      - conscious_pg:/var/lib/postgresql/data
+
+volumes:
+  conscious_pg:
