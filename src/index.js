@@ -26,7 +26,7 @@ const PORT = Number(process.env.PORT || 3000);
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN;
 
 const ALLOWED_ORIGINS = [
-  FRONTEND_ORIGIN,
+  process.env.FRONTEND_ORIGIN,
   "http://localhost:5173",
   "http://localhost:5174",
 ].filter(Boolean);
@@ -35,7 +35,11 @@ app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
+
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+
+      if (origin.endsWith(".vercel.app")) return cb(null, true);
+
       return cb(new Error(`Not allowed by CORS: ${origin}`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
